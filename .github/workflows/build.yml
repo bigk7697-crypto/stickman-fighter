@@ -1,0 +1,95 @@
+name: Build Stickman Fighter
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      
+    - name: Download GLFW
+      run: |
+        $url = "https://github.com/glfw/glfw/releases/download/3.3.8/glfw-3.3.8.bin.WIN64.zip"
+        Invoke-WebRequest -Uri $url -OutFile "glfw.zip"
+        Expand-Archive -Path "glfw.zip" -DestinationPath "."
+        Rename-Item -Path "glfw-3.3.8.bin.WIN64" -NewName "external\glfw" -Force
+        Remove-Item "glfw.zip"
+        
+    - name: Download GLM
+      run: |
+        $url = "https://github.com/g-truc/glm/releases/download/0.9.9.8/glm-0.9.9.8.zip"
+        Invoke-WebRequest -Uri $url -OutFile "glm.zip"
+        Expand-Archive -Path "glm.zip" -DestinationPath "."
+        Rename-Item -Path "glm-0.9.9.8" -NewName "external\glm" -Force
+        Remove-Item "glm.zip"
+        
+    - name: Create build directory
+      run: mkdir build
+      
+    - name: Compile source files
+      run: |
+        $includes = "/I src /I external\glad\include /I external\glfw\include /I external\glm"
+        $flags = "/EHsc /O2 /MD /nologo"
+        
+        cl $flags $includes /c /Fo"build\main.obj" "src\main.cpp"
+        cl $flags $includes /c /Fo"build\Window.obj" "src\engine\Window.cpp"
+        cl $flags $includes /c /Fo"build\Renderer.obj" "src\engine\Renderer.cpp"
+        cl $flags $includes /c /Fo"build\Shader.obj" "src\engine\Shader.cpp"
+        cl $flags $includes /c /Fo"build\Mesh.obj" "src\engine\Mesh.cpp"
+        cl $flags $includes /c /Fo"build\Camera.obj" "src\engine\Camera.cpp"
+        cl $flags $includes /c /Fo"build\Input.obj" "src\engine\Input.cpp"
+        cl $flags $includes /c /Fo"build\GameObject.obj" "src\game\GameObject.cpp"
+        cl $flags $includes /c /Fo"build\Animator.obj" "src\game\Animator.cpp"
+        cl $flags $includes /c /Fo"build\CombatSystem.obj" "src\game\CombatSystem.cpp"
+        cl $flags $includes /c /Fo"build\HealthSystem.obj" "src\game\HealthSystem.cpp"
+        cl /O2 /MD /nologo /I"external\glad\include" /c /Fo"build\glad.obj" "external\glad\src\glad.c"
+        
+    - name: Link executable
+      run: |
+        link /nologo /OUT:"build\StickmanFighter.exe" `
+          "build\main.obj" `
+          "build\Window.obj" `
+          "build\Renderer.obj" `
+          "build\Shader.obj" `
+          "build\Mesh.obj" `
+          "build\Camera.obj" `
+          "build\Input.obj" `
+          "build\GameObject.obj" `
+          "build\Animator.obj" `
+          "build\CombatSystem.obj" `
+          "build\HealthSystem.obj" `
+          "build\glad.obj" `
+          "external\glfw\lib-vc2022\glfw3.lib" `
+          opengl32.lib user32.lib gdi32.lib shell32.lib
+          
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: StickmanFighter-Windows
+        path: build/StickmanFighter.exe
+        
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/StickmanFighter.exe
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
